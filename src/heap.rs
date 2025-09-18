@@ -10,13 +10,33 @@ pub enum BfAst {
     Loop(Vec<BfAst>),
 }
 impl BfAst {
-    pub fn parse(a: &mut (dyn Iterator<Item = BfToken> + '_)) -> Option<Self> {
-        match a.next()? {
-            BfToken::Instr(i) => return Some(Self::Instr(i)),
+    pub fn parse<E>(
+        a: &mut (dyn Iterator<Item = Result<BfToken, E>> + '_),
+    ) -> Result<Option<Self>, E> {
+        match match a.next().transpose()? {
+            Some(a) => a,
+            None => return Ok(None),
+        } {
+            BfToken::Instr(i) => return Ok(Some(Self::Instr(i))),
             BfToken::LoopBegin => {
-                return Some(Self::Loop(core::iter::from_fn(|| Self::parse(a)).collect()));
+                let mut l: Vec<BfAst> = Vec::default();
+                let mut a = a.peekable();
+                loop {
+                    let p = a.peek();
+                    let Some(Ok(a2)) = p else { break };
+                    if let BfToken::LoopEnd = a2 {
+                        match a.next().transpose()? {
+                            Some(a) => a,
+                            None => return Ok(None),
+                        };
+                        break;
+                    }
+                    let Some(v) = Self::parse(&mut a)? else { break };
+                    l.push(v);
+                }
+                return Ok(Some(Self::Loop(l)));
             }
-            BfToken::LoopEnd => return None,
+            BfToken::LoopEnd => return Ok(None),
         }
     }
     pub fn tokens<'a>(&'a self) -> Box<dyn Iterator<Item = BfToken> + 'a> {
@@ -108,50 +128,58 @@ impl<T> BfTree<T> {
                 .collect::<Result<_, E>>()?,
         })
     }
-    pub fn to_cff(
+    pub fn to_cff<E>(
         &self,
         iterate: &mut (
-                 dyn for<'a> FnMut(&'a T, u32) -> Box<dyn Iterator<Item = BfToken> + 'a> + '_
+                 dyn for<'a> FnMut(&'a T, u32) -> Box<dyn Iterator<Item = Result<BfToken, E>> + 'a>
+                     + '_
              ),
-    ) -> impl Iterator<Item = BfToken> {
+    ) -> impl Iterator<Item = Result<BfToken, E>> {
         once(BfToken::Instr(BfInstr::Plus))
             .cycle()
             .take(self.begin as usize)
             .chain([BfToken::LoopBegin])
+            .map(Ok)
             .chain(self.blocks.iter().flat_map(move |(b, c)| {
                 once(BfToken::Instr(BfInstr::Minus))
                     .cycle()
                     .take(*b as usize)
                     .chain([BfToken::LoopBegin, BfToken::Instr(BfInstr::Next)])
+                    .map(Ok)
                     .chain(iterate(&c.instrs, *b).flat_map(|a| match a {
-                        BfToken::Instr(BfInstr::Next) => {
-                            Either::Left([BfToken::Instr(BfInstr::Next); 2].into_iter())
-                        }
-                        BfToken::Instr(BfInstr::Prev) => {
-                            Either::Left([BfToken::Instr(BfInstr::Prev); 2].into_iter())
-                        }
+                        Ok(BfToken::Instr(BfInstr::Next)) => Either::Left(
+                            [const { Ok(BfToken::Instr(BfInstr::Next)) }; 2].into_iter(),
+                        ),
+                        Ok(BfToken::Instr(BfInstr::Prev)) => Either::Left(
+                            [const { Ok(BfToken::Instr(BfInstr::Prev)) }; 2].into_iter(),
+                        ),
                         a => Either::Right([a].into_iter()),
                     }))
-                    .chain(match c.term {
-                        BfTerm::Dynamic => Either::Left(BfToken::iter_str("[<+>-]<")),
-                        BfTerm::Static(a) => {
-                            Either::Right([BfToken::Instr(BfInstr::Next)].into_iter().chain(
-                                once(BfToken::Instr(BfInstr::Plus)).cycle().take(a as usize),
-                            ))
+                    .chain(
+                        match c.term {
+                            BfTerm::Dynamic => Either::Left(BfToken::iter_str("[<+>-]<")),
+                            BfTerm::Static(a) => {
+                                Either::Right([BfToken::Instr(BfInstr::Next)].into_iter().chain(
+                                    once(BfToken::Instr(BfInstr::Plus)).cycle().take(a as usize),
+                                ))
+                            }
                         }
-                    })
+                        .map(Ok),
+                    )
                     .chain(
                         once(BfToken::Instr(BfInstr::Minus))
                             .cycle()
-                            .take(*b as usize),
+                            .take(*b as usize)
+                            .map(Ok),
                     )
-                    .chain([BfToken::LoopEnd])
+                    .chain([BfToken::LoopEnd].map(Ok))
                     .chain(
                         once(BfToken::Instr(BfInstr::Plus))
                             .cycle()
-                            .take(*b as usize),
+                            .take(*b as usize)
+                            .map(Ok),
                     )
             }))
-            .chain([BfToken::LoopEnd])
+            .chain([BfToken::LoopEnd].map(Ok))
     }
 }
