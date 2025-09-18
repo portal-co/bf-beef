@@ -1,0 +1,12 @@
+[package]
+name = "portal-solutions-bf-beef"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+description = "BF tools"
+
+[dependencies]
+either = { version = "1.15.0", default-features = false }
+
+[features]
+alloc=[]
