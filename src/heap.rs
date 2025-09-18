@@ -1,9 +1,94 @@
-use core::iter::once;
+use core::{iter::once, mem::take};
 
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
 
 use crate::*;
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+pub struct BfState {
+    pub tape: Vec<u8>,
+    pub pos: usize,
+    pub out: Vec<u8>,
+}
+impl BfState {
+    pub fn peel(&mut self, i: &mut (dyn Iterator<Item = u8>), v: &mut Vec<BfAst>) -> Option<()> {
+        let mut s = self;
+        v.reverse();
+        loop {
+            let Some(a) = v.pop() else {
+                v.reverse();
+                return Some(());
+            };
+            match a {
+                BfAst::Instr(bf_instr) => match bf_instr {
+                    BfInstr::Plus => {
+                        s.tape[s.pos] = s.tape[s.pos].wrapping_add(1);
+                    }
+                    BfInstr::Minus => {
+                        s.tape[s.pos] = s.tape[s.pos].wrapping_sub(1);
+                    }
+                    BfInstr::Next => {
+                        s.pos += 1;
+                        if s.pos == s.tape.len() {
+                            s.tape.push(0);
+                        }
+                    }
+                    BfInstr::Prev => {
+                        s.pos -= 1;
+                    }
+                    BfInstr::In => match i.next() {
+                        None => {
+                            v.reverse();
+                            v.insert(0, a);
 
+                            return None;
+                        }
+                        Some(u) => {
+                            s.tape[s.pos] = u;
+                        }
+                    },
+                    BfInstr::Out => {
+                        s.out.push(s.tape[s.pos]);
+                    }
+                },
+                BfAst::Loop(mut bf_asts) => match s.tape[s.pos] {
+                    0 => {}
+                    _ => {
+                        v.extend(
+                            [BfAst::Loop(bf_asts.clone())]
+                                .into_iter()
+                                .chain(bf_asts.into_iter().rev()),
+                        );
+                    }
+                },
+            }
+        }
+    }
+    pub fn render(&self) -> impl Iterator<Item = BfToken> {
+        self.out
+            .iter()
+            .flat_map(|a| {
+                BfToken::iter_str("[-]")
+                    .chain(
+                        once(BfToken::Instr(BfInstr::Plus))
+                            .cycle()
+                            .take(*a as usize),
+                    )
+                    .chain(once(BfToken::Instr(BfInstr::Out)))
+            })
+            .chain(BfToken::iter_str("[-]"))
+            .chain(self.tape.iter().flat_map(|a| {
+                once(BfToken::Instr(BfInstr::Plus))
+                    .cycle()
+                    .take(*a as usize)
+                    .chain([BfToken::Instr(BfInstr::Next)])
+            }))
+            .chain(
+                once(BfToken::Instr(BfInstr::Prev))
+                    .cycle()
+                    .take(self.tape.len() - self.pos - 1),
+            )
+    }
+}
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum BfAst {
     Instr(BfInstr),
@@ -49,6 +134,35 @@ impl BfAst {
                     .chain([BfToken::LoopEnd]),
             ),
         })
+    }
+    pub fn opt(a: &mut Vec<Self>) {
+        let mut l = false;
+        for b in take(a) {
+            match b {
+                BfAst::Instr(bf_instr) => {
+                    l = false;
+                    match (a.pop(), bf_instr) {
+                        (Some(BfAst::Instr(BfInstr::Plus)), BfInstr::Minus)
+                        | (Some(BfAst::Instr(BfInstr::Minus)), BfInstr::Plus)
+                        | (Some(BfAst::Instr(BfInstr::Prev)), BfInstr::Next)
+                        | (Some(BfAst::Instr(BfInstr::Next)), BfInstr::Prev) => {}
+                        (o, bf_instr) => {
+                            if let Some(o) = o {
+                                a.push(o);
+                            }
+                            a.push(BfAst::Instr(bf_instr));
+                        }
+                    }
+                }
+                BfAst::Loop(mut bf_asts) => {
+                    if !l {
+                        l = true;
+                        Self::opt(&mut bf_asts);
+                        a.push(Self::Loop(bf_asts));
+                    }
+                }
+            }
+        }
     }
 }
 impl Display for BfAst {
