@@ -133,7 +133,7 @@ impl<T> BfTree<T> {
                         a => Either::Right([a].into_iter()),
                     }))
                     .chain(match c.term {
-                        BfTerm::Dynamic => Either::Left(BfToken::iter_str("[>+<-]>")),
+                        BfTerm::Dynamic => Either::Left(BfToken::iter_str("[<+>-]<")),
                         BfTerm::Static(a) => {
                             Either::Right([BfToken::Instr(BfInstr::Next)].into_iter().chain(
                                 once(BfToken::Instr(BfInstr::Plus)).cycle().take(a as usize),
