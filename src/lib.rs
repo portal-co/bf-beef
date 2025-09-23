@@ -86,6 +86,13 @@ impl BfToken {
             }
         }
     }
+    pub fn ncopy_loop(a: usize) -> impl Iterator<Item = BfToken> {
+        BfToken::iter_str("[-")
+            .chain([BfToken::Instr(BfInstr::Next)].into_iter().cycle().take(a))
+            .chain(BfToken::iter_str("+"))
+            .chain([BfToken::Instr(BfInstr::Prev)].into_iter().cycle().take(a))
+            .chain(BfToken::iter_str("]"))
+    }
 }
 impl Display for BfToken {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
