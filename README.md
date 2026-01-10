@@ -1,13 +1,14 @@
 # bf-beef
 
 ## Description
-Project bf-beef
+Tools and utilities for "BF" (likely Brainfuck or similar esoteric language processing), implemented in Rust.
 
 ## Goals
-- [ ] Add project goals
+- [ ] Implement BF interpreters or compilers
+- [ ] Provide utility traits for BF operations
 
 ## Progress
-- [ ] Initial setup
+- [ ] Crate initialized (v0.1.0)
 
 ---
 *AI assisted*
